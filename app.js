@@ -6,7 +6,7 @@ let allPixels = []; // Store all pixel colors for grouping
 // DOM elements
 const imageInput = document.getElementById('imageInput');
 const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
+const ctx = canvas.getContext('2d', { willReadFrequently: true });
 const imagePreview = document.getElementById('imagePreview');
 const results = document.getElementById('results');
 const colorList = document.getElementById('colorList');
@@ -38,10 +38,17 @@ function handleImageUpload(event) {
     reader.onload = function(e) {
         const img = new Image();
 
+        // Set crossOrigin to handle potential CORS issues
+        img.crossOrigin = 'anonymous';
+
         img.onload = function() {
             // Set canvas dimensions to match image
             canvas.width = img.width;
             canvas.height = img.height;
+
+            // Fill with white background first (helps with transparent PNGs)
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             // Draw image on canvas
             ctx.drawImage(img, 0, 0);
@@ -61,9 +68,17 @@ function handleImageUpload(event) {
 
 // Analyze colors in the image
 function analyzeColors() {
-    // Get image data from canvas
-    imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const pixels = imageData.data;
+    let pixels;
+
+    try {
+        // Get image data from canvas
+        imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        pixels = imageData.data;
+    } catch (error) {
+        console.error('Error reading image data:', error);
+        alert('Error analyzing image. The image may have security restrictions or be corrupted.');
+        return;
+    }
 
     // Object to store color counts
     const colorCounts = {};
@@ -105,6 +120,16 @@ function analyzeColors() {
             percentage: percentage
         };
     }
+
+    // Debug: Log top 10 colors
+    const sortedColors = Object.entries(colorData).sort((a, b) => b[1].percentage - a[1].percentage);
+    console.log('Top 10 colors detected:');
+    sortedColors.slice(0, 10).forEach(([color, data], index) => {
+        const [r, g, b] = color.split(',').map(Number);
+        console.log(`${index + 1}. RGB(${r}, ${g}, ${b}) - ${data.percentage.toFixed(2)}% (${data.count} pixels)`);
+    });
+    console.log(`Total unique colors: ${Object.keys(colorData).length}`);
+    console.log(`Total pixels analyzed: ${totalPixelsAnalyzed}`);
 
     // Display results
     updateDisplay();
