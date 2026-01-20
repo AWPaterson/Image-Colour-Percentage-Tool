@@ -36,17 +36,132 @@ function handleImageUpload(event) {
         return;
     }
 
-    // Check JPEG header for color space information
-    checkJPEGColorSpace(file);
+    // Check JPEG header for color space information AND extract ICC profile
+    checkAndExtractICCProfile(file);
 
-    // Use traditional image loading method - it reliably applies color profiles
-    // createImageBitmap has issues with colorSpaceConversion options, causing
-    // images with embedded color profiles to be read incorrectly
-    console.log('Loading image using traditional method to ensure color profiles are applied...');
-    loadImageTraditional(file);
+    // Try ImageDecoder API first (best color profile support)
+    if ('ImageDecoder' in window) {
+        console.log('ImageDecoder API available - using it for better color profile support');
+        loadImageWithImageDecoder(file);
+    } else {
+        // Fallback to traditional image loading method
+        console.log('ImageDecoder API not available, using traditional method...');
+        loadImageTraditional(file);
+    }
 }
 
-// Check JPEG color space from file header
+// Store ICC profile data globally
+let extractedICCProfile = null;
+
+// Check JPEG color space and extract ICC profile
+function checkAndExtractICCProfile(file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const arr = new Uint8Array(e.target.result);
+        extractedICCProfile = extractICCProfileFromJPEG(arr);
+
+        if (extractedICCProfile) {
+            console.log(`✅ Extracted ICC profile: ${extractedICCProfile.length} bytes`);
+        } else {
+            console.log('No ICC profile found in image');
+        }
+
+        // Also check color space for debugging
+        checkJPEGColorSpaceInfo(arr);
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+// Extract ICC profile from JPEG data
+function extractICCProfileFromJPEG(uint8Array) {
+    // Look for ICC profile marker (APP2 with ICC_PROFILE signature)
+    let offset = 2; // Skip SOI marker
+    const arr = uint8Array;
+
+    while (offset < arr.length - 1) {
+        if (arr[offset] !== 0xFF) break;
+
+        const marker = arr[offset + 1];
+        const length = (arr[offset + 2] << 8) | arr[offset + 3];
+
+        // APP2 marker (0xFFE2) often contains ICC profile
+        if (marker === 0xE2 && offset + 14 < arr.length) {
+            // Check for ICC_PROFILE signature
+            const signature = String.fromCharCode(...arr.slice(offset + 4, offset + 16));
+            if (signature.startsWith('ICC_PROFILE')) {
+                console.log('Found ICC_PROFILE marker in JPEG');
+                // Extract the ICC profile data
+                const profileStart = offset + 18; // Skip marker, length, and ICC_PROFILE header
+                const profileEnd = offset + 2 + length;
+                return arr.slice(profileStart, profileEnd);
+            }
+        }
+
+        offset += 2 + length;
+    }
+
+    return null;
+}
+
+// Check JPEG color space info (original function, renamed)
+function checkJPEGColorSpaceInfo(uint8Array) {
+    const arr = uint8Array.subarray(0, 4000);
+    let view = new DataView(arr.buffer, arr.byteOffset, arr.byteLength);
+
+    // Check for JPEG SOI marker (0xFFD8)
+    if (view.getUint16(0) !== 0xFFD8) {
+        console.log('Not a JPEG file or unable to read header');
+        return;
+    }
+
+    // Look for APP14 marker which contains color space info
+    let offset = 2;
+    let foundColorInfo = false;
+
+    while (offset < arr.length - 1) {
+        if (arr[offset] !== 0xFF) break;
+
+        const marker = arr[offset + 1];
+        const length = (arr[offset + 2] << 8) | arr[offset + 3];
+
+        // APP14 marker (0xFFEE) contains Adobe color transform info
+        if (marker === 0xEE && offset + 14 < arr.length) {
+            const transform = arr[offset + 13];
+            console.log('JPEG Color Info - Adobe APP14 marker found');
+            console.log('Color transform value:', transform);
+            console.log('  0 = Unknown (possibly CMYK or RGB)');
+            console.log('  1 = YCbCr (standard)');
+            console.log('  2 = YCCK (CMYK)');
+            foundColorInfo = true;
+
+            if (transform === 0 || transform === 2) {
+                console.warn('⚠️ WARNING: This JPEG may be in CMYK or non-standard color space!');
+            }
+        }
+
+        // SOF markers that contain color space info
+        if (marker >= 0xC0 && marker <= 0xCF && marker !== 0xC4 && marker !== 0xC8 && marker !== 0xCC) {
+            const components = arr[offset + 9];
+            console.log(`JPEG has ${components} color components`);
+            if (components === 1) {
+                console.log('⚠️ This is a grayscale JPEG (1 component)');
+            } else if (components === 3) {
+                console.log('This is an RGB/YCbCr JPEG (3 components)');
+            } else if (components === 4) {
+                console.warn('⚠️ WARNING: This appears to be a CMYK JPEG (4 components)!');
+            }
+            foundColorInfo = true;
+        }
+
+        offset += 2 + length;
+    }
+
+    if (!foundColorInfo) {
+        console.log('Could not determine JPEG color space from header');
+    }
+}
+
+// Old function kept for compatibility
 function checkJPEGColorSpace(file) {
     const reader = new FileReader();
     reader.onload = function(e) {
@@ -143,6 +258,79 @@ function processImage(source) {
 
     // Analyze colors directly
     // Note: getImageData() returns raw pixel data without ICC color profile transformations
+    analyzeColors();
+}
+
+// Load image using ImageDecoder API (better color profile support)
+async function loadImageWithImageDecoder(file) {
+    try {
+        console.log('Creating ImageDecoder...');
+
+        // Create ImageDecoder from the file
+        const decoder = new ImageDecoder({
+            data: file,
+            type: file.type,
+            colorSpaceConversion: 'default',  // Apply color profile transformations
+            desiredWidth: undefined,
+            desiredHeight: undefined
+        });
+
+        console.log('Decoding image frame...');
+
+        // Decode the first frame
+        const result = await decoder.decode({ frameIndex: 0 });
+        const decodedImage = result.image;
+
+        console.log(`✅ ImageDecoder decoded image: ${decodedImage.displayWidth}x${decodedImage.displayHeight}`);
+        console.log(`Color space: ${decodedImage.colorSpace || 'unknown'}`);
+
+        // Close the decoder
+        decoder.close();
+
+        // Process the decoded image
+        processDecodedImage(decodedImage);
+
+    } catch (error) {
+        console.error('ImageDecoder failed:', error);
+        console.log('Falling back to traditional method...');
+        loadImageTraditional(file);
+    }
+}
+
+// Process decoded image from ImageDecoder
+function processDecodedImage(videoFrame) {
+    console.log(`Processing decoded image: ${videoFrame.displayWidth}x${videoFrame.displayHeight}`);
+
+    // Set canvas dimensions
+    canvas.width = videoFrame.displayWidth;
+    canvas.height = videoFrame.displayHeight;
+
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw the VideoFrame to canvas
+    ctx.drawImage(videoFrame, 0, 0);
+
+    // Close the video frame
+    videoFrame.close();
+
+    // Show image preview
+    imagePreview.classList.remove('hidden');
+
+    // Sample pixels for debugging
+    console.log('Sampling pixel colors from decoded image:');
+    const locations = [
+        [Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 'center'],
+        [Math.floor(canvas.width / 4), Math.floor(canvas.height / 4), 'top-left quadrant'],
+        [Math.floor(canvas.width * 3/4), Math.floor(canvas.height * 3/4), 'bottom-right quadrant']
+    ];
+
+    locations.forEach(([x, y, label]) => {
+        const testPixels = ctx.getImageData(x, y, 1, 1).data;
+        console.log(`${label} [${x},${y}]: RGB(${testPixels[0]}, ${testPixels[1]}, ${testPixels[2]}, alpha: ${testPixels[3]})`);
+    });
+
+    // Analyze colors
     analyzeColors();
 }
 
