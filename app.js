@@ -200,6 +200,133 @@ function loadImageTraditional(file) {
     reader.readAsDataURL(file);
 }
 
+// Try to fix color profile issues by converting to PNG
+function tryConvertToPNG() {
+    console.log('\n🔧 Attempting to fix by re-encoding as PNG...');
+
+    try {
+        // Convert the current canvas (which displays correctly) to PNG
+        const pngDataURL = canvas.toDataURL('image/png');
+        console.log('Canvas converted to PNG data URL');
+
+        // Create a new image from the PNG
+        const img = new Image();
+
+        img.onload = function() {
+            console.log('PNG image loaded, redrawing to canvas...');
+
+            // Clear and redraw
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0);
+
+            console.log('Re-analyzing colors from PNG...');
+
+            // Re-analyze without going through the conversion again
+            analyzeColorsDirectly();
+        };
+
+        img.onerror = function(error) {
+            console.error('Failed to load PNG conversion:', error);
+            alert('Auto-fix failed. The image format cannot be automatically converted.\n\nPlease manually convert the image to RGB color space using image editing software.');
+        };
+
+        img.src = pngDataURL;
+    } catch (error) {
+        console.error('Error during PNG conversion:', error);
+        alert('Auto-fix failed: ' + error.message + '\n\nPlease manually convert the image to RGB color space.');
+    }
+}
+
+// Analyze colors without checking for grayscale (used after PNG conversion)
+function analyzeColorsDirectly() {
+    let pixels;
+
+    try {
+        // Get image data from canvas
+        imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        pixels = imageData.data;
+
+        console.log('Reading pixel data after PNG conversion...');
+        console.log(`First pixel: RGB(${pixels[0]}, ${pixels[1]}, ${pixels[2]}, ${pixels[3]})`);
+    } catch (error) {
+        console.error('Error reading image data:', error);
+        alert('Error analyzing converted image.');
+        return;
+    }
+
+    // Object to store color counts
+    const colorCounts = {};
+    allPixels = []; // Reset all pixels array
+
+    // Loop through all pixels
+    for (let i = 0; i < pixels.length; i += 4) {
+        const r = pixels[i];
+        const g = pixels[i + 1];
+        const b = pixels[i + 2];
+        const a = pixels[i + 3];
+
+        // Skip fully transparent pixels
+        if (a === 0) continue;
+
+        // Store pixel for grouping
+        allPixels.push([r, g, b]);
+
+        // Create color key in RGB format
+        const colorKey = `${r},${g},${b}`;
+
+        // Count color occurrences
+        if (colorCounts[colorKey]) {
+            colorCounts[colorKey]++;
+        } else {
+            colorCounts[colorKey] = 1;
+        }
+    }
+
+    const totalPixelsAnalyzed = allPixels.length;
+
+    // Check if still grayscale
+    let grayscaleCount = 0;
+    let colorCount = 0;
+    for (const pixel of allPixels.slice(0, 1000)) {
+        if (pixel[0] === pixel[1] && pixel[1] === pixel[2]) {
+            grayscaleCount++;
+        } else {
+            colorCount++;
+        }
+    }
+
+    if (grayscaleCount > 950) {
+        console.error('❌ PNG conversion still resulted in grayscale data.');
+        console.error('This image cannot be automatically fixed.');
+        alert('❌ Auto-fix Failed\n\nThe image still contains grayscale data after conversion.\n\nYou must manually convert this image:\n1. Open in image editing software\n2. Apply/flatten the color profile\n3. Save as new RGB JPEG or PNG\n4. Upload the new file');
+        return;
+    }
+
+    console.log('✅ PNG conversion successful! Colors detected after conversion.');
+
+    // Convert counts to percentages
+    colorData = {};
+
+    for (const [color, count] of Object.entries(colorCounts)) {
+        const percentage = (count / totalPixelsAnalyzed) * 100;
+        colorData[color] = {
+            count: count,
+            percentage: percentage
+        };
+    }
+
+    // Debug: Log top 10 colors
+    const sortedColors = Object.entries(colorData).sort((a, b) => b[1].percentage - a[1].percentage);
+    console.log('Top 10 colors detected after conversion:');
+    sortedColors.slice(0, 10).forEach(([color, data], index) => {
+        const [r, g, b] = color.split(',').map(Number);
+        console.log(`${index + 1}. RGB(${r}, ${g}, ${b}) - ${data.percentage.toFixed(2)}% (${data.count} pixels)`);
+    });
+
+    // Display results
+    updateDisplay();
+}
+
 // Analyze colors in the image
 function analyzeColors() {
     let pixels;
@@ -256,14 +383,12 @@ function analyzeColors() {
             console.error(`  • The raw JPEG data contains grayscale pixels (R=G=B)`);
             console.error(`  • An embedded ICC color profile is mapping grayscale→color for display`);
             console.error(`  • But getImageData() returns the RAW data (grayscale)`);
-            console.error(`\n💡 SOLUTION:`);
-            console.error(`You need to convert this image to RGB with the colors baked into the pixel data.`);
-            console.error(`Options:`);
-            console.error(`  1. Open in Photoshop/GIMP → Image → Mode → Convert to RGB Color → Save`);
-            console.error(`  2. Use online converter to convert from indexed/grayscale to RGB`);
-            console.error(`  3. Take a screenshot of the image and use the screenshot instead`);
+            console.error(`\n💡 ATTEMPTING AUTO-FIX:`);
+            console.error(`Trying to convert the rendered canvas to PNG and re-analyze...`);
 
-            alert('⚠️ Image Issue Detected!\n\nThis image has grayscale pixel data with a color profile applied. The app cannot detect colors from this format.\n\nSolution: Convert the image to RGB color mode using image editing software (Photoshop, GIMP, etc.) or take a screenshot of it.\n\nSee console for details.');
+            // Attempt to fix by converting canvas to PNG and re-loading
+            tryConvertToPNG();
+            return; // Stop current analysis
         }
     } catch (error) {
         console.error('Error reading image data:', error);
