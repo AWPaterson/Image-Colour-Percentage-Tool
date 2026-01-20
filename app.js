@@ -36,6 +36,9 @@ function handleImageUpload(event) {
         return;
     }
 
+    // Check JPEG header for color space information
+    checkJPEGColorSpace(file);
+
     // Try different createImageBitmap options
     const bitmapOptions = [
         { colorSpaceConversion: 'none', premultiplyAlpha: 'none' },
@@ -78,6 +81,71 @@ function handleImageUpload(event) {
             console.error('All createImageBitmap attempts failed, falling back to traditional method', error);
             loadImageTraditional(file);
         });
+}
+
+// Check JPEG color space from file header
+function checkJPEGColorSpace(file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const arr = new Uint8Array(e.target.result).subarray(0, 4000);
+        let view = new DataView(arr.buffer);
+
+        // Check for JPEG SOI marker (0xFFD8)
+        if (view.getUint16(0) !== 0xFFD8) {
+            console.log('Not a JPEG file or unable to read header');
+            return;
+        }
+
+        // Look for APP14 marker which contains color space info
+        let offset = 2;
+        let foundColorInfo = false;
+
+        while (offset < arr.length - 1) {
+            if (arr[offset] !== 0xFF) break;
+
+            const marker = arr[offset + 1];
+            const length = (arr[offset + 2] << 8) | arr[offset + 3];
+
+            // APP14 marker (0xFFEE) contains Adobe color transform info
+            if (marker === 0xEE && offset + 14 < arr.length) {
+                const transform = arr[offset + 13];
+                console.log('JPEG Color Info - Adobe APP14 marker found');
+                console.log('Color transform value:', transform);
+                console.log('  0 = Unknown (possibly CMYK or RGB)');
+                console.log('  1 = YCbCr (standard)');
+                console.log('  2 = YCCK (CMYK)');
+                foundColorInfo = true;
+
+                if (transform === 0 || transform === 2) {
+                    console.warn('⚠️ WARNING: This JPEG may be in CMYK or non-standard color space!');
+                    console.warn('⚠️ Chrome has bugs reading pixel data from CMYK JPEGs.');
+                    alert('Warning: This image appears to be in CMYK or non-standard color space. The color detection may not work correctly. Please convert the image to RGB color space.');
+                }
+            }
+
+            // SOF markers that contain color space info
+            if (marker >= 0xC0 && marker <= 0xCF && marker !== 0xC4 && marker !== 0xC8 && marker !== 0xCC) {
+                const components = arr[offset + 9];
+                console.log(`JPEG has ${components} color components`);
+                if (components === 1) {
+                    console.log('⚠️ This is a grayscale JPEG (1 component)');
+                } else if (components === 3) {
+                    console.log('This is an RGB/YCbCr JPEG (3 components)');
+                } else if (components === 4) {
+                    console.warn('⚠️ WARNING: This appears to be a CMYK JPEG (4 components)!');
+                    alert('Warning: This image appears to be in CMYK color space. Chrome cannot correctly read pixel data from CMYK JPEGs. Please convert to RGB.');
+                }
+                foundColorInfo = true;
+            }
+
+            offset += 2 + length;
+        }
+
+        if (!foundColorInfo) {
+            console.log('Could not determine JPEG color space from header');
+        }
+    };
+    reader.readAsArrayBuffer(file.slice(0, 4000)); // Read first 4KB
 }
 
 // Process image (bitmap or Image object)
