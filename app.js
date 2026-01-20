@@ -36,43 +36,82 @@ function handleImageUpload(event) {
         return;
     }
 
-    // Use createImageBitmap for better color profile handling
-    createImageBitmap(file, {
-        colorSpaceConversion: 'none',  // Preserve original colors
-        premultiplyAlpha: 'none'
-    }).then(bitmap => {
-        console.log(`Image loaded via createImageBitmap: ${bitmap.width}x${bitmap.height}`);
+    // Try different createImageBitmap options
+    const bitmapOptions = [
+        { colorSpaceConversion: 'none', premultiplyAlpha: 'none' },
+        { colorSpaceConversion: 'default', premultiplyAlpha: 'none' },
+        { premultiplyAlpha: 'none' },
+        {} // No options at all
+    ];
 
-        // Set canvas dimensions to match image
-        canvas.width = bitmap.width;
-        canvas.height = bitmap.height;
+    console.log('Attempting to load image with createImageBitmap...');
 
-        // Clear the canvas
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Try with 'none' first (preserve colors)
+    createImageBitmap(file, bitmapOptions[0])
+        .then(bitmap => {
+            console.log(`Image loaded via createImageBitmap with colorSpaceConversion: 'none'`);
+            processImage(bitmap);
+        })
+        .catch(error => {
+            console.warn('Failed with colorSpaceConversion: none, trying default...', error);
+            // Try with default color space conversion
+            return createImageBitmap(file, bitmapOptions[1]);
+        })
+        .then(bitmap => {
+            if (bitmap) {
+                console.log(`Image loaded via createImageBitmap with colorSpaceConversion: 'default'`);
+                processImage(bitmap);
+            }
+        })
+        .catch(error => {
+            console.warn('Failed with default, trying without colorSpaceConversion option...', error);
+            // Try without colorSpaceConversion option
+            return createImageBitmap(file, bitmapOptions[2]);
+        })
+        .then(bitmap => {
+            if (bitmap) {
+                console.log(`Image loaded via createImageBitmap without colorSpaceConversion`);
+                processImage(bitmap);
+            }
+        })
+        .catch(error => {
+            console.error('All createImageBitmap attempts failed, falling back to traditional method', error);
+            loadImageTraditional(file);
+        });
+}
 
-        // Draw bitmap on canvas
-        ctx.drawImage(bitmap, 0, 0);
+// Process image (bitmap or Image object)
+function processImage(source) {
+    console.log(`Processing image: ${source.width}x${source.height}`);
 
-        // Show image preview
-        imagePreview.classList.remove('hidden');
+    // Set canvas dimensions to match image
+    canvas.width = source.width;
+    canvas.height = source.height;
 
-        // Sample a few pixels to check colors are being read correctly
-        console.log('Sampling some pixel colors from the drawn canvas:');
-        const testPixels = ctx.getImageData(
-            Math.floor(bitmap.width / 2),
-            Math.floor(bitmap.height / 2),
-            1,
-            1
-        ).data;
-        console.log(`Center pixel: RGB(${testPixels[0]}, ${testPixels[1]}, ${testPixels[2]}, alpha: ${testPixels[3]})`);
+    // Clear the canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Analyze colors
-        analyzeColors();
-    }).catch(error => {
-        console.error('Error loading image with createImageBitmap:', error);
-        // Fallback to traditional method
-        loadImageTraditional(file);
+    // Draw image/bitmap on canvas
+    ctx.drawImage(source, 0, 0);
+
+    // Show image preview
+    imagePreview.classList.remove('hidden');
+
+    // Sample multiple pixels to check colors are being read correctly
+    console.log('Sampling pixel colors from different locations:');
+    const locations = [
+        [Math.floor(source.width / 2), Math.floor(source.height / 2), 'center'],
+        [Math.floor(source.width / 4), Math.floor(source.height / 4), 'top-left quadrant'],
+        [Math.floor(source.width * 3/4), Math.floor(source.height * 3/4), 'bottom-right quadrant']
+    ];
+
+    locations.forEach(([x, y, label]) => {
+        const testPixels = ctx.getImageData(x, y, 1, 1).data;
+        console.log(`${label} [${x},${y}]: RGB(${testPixels[0]}, ${testPixels[1]}, ${testPixels[2]}, alpha: ${testPixels[3]})`);
     });
+
+    // Analyze colors
+    analyzeColors();
 }
 
 // Fallback to traditional image loading
@@ -84,32 +123,7 @@ function loadImageTraditional(file) {
 
         img.onload = function() {
             console.log(`Image loaded via traditional method: ${img.width}x${img.height}`);
-
-            // Set canvas dimensions to match image
-            canvas.width = img.width;
-            canvas.height = img.height;
-
-            // Clear the canvas
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Draw image on canvas
-            ctx.drawImage(img, 0, 0);
-
-            // Show image preview
-            imagePreview.classList.remove('hidden');
-
-            // Sample pixels
-            console.log('Sampling some pixel colors from the drawn canvas:');
-            const testPixels = ctx.getImageData(
-                Math.floor(img.width / 2),
-                Math.floor(img.height / 2),
-                1,
-                1
-            ).data;
-            console.log(`Center pixel: RGB(${testPixels[0]}, ${testPixels[1]}, ${testPixels[2]}, alpha: ${testPixels[3]})`);
-
-            // Analyze colors
-            analyzeColors();
+            processImage(img);
         };
 
         img.src = e.target.result;
@@ -123,9 +137,26 @@ function analyzeColors() {
     let pixels;
 
     try {
-        // Get image data from canvas
-        imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        // Create a fresh canvas for pixel analysis (separate from display)
+        const analysisCanvas = document.createElement('canvas');
+        analysisCanvas.width = canvas.width;
+        analysisCanvas.height = canvas.height;
+        const analysisCtx = analysisCanvas.getContext('2d', {
+            willReadFrequently: true
+        });
+
+        // Copy the image from display canvas to analysis canvas
+        analysisCtx.drawImage(canvas, 0, 0);
+
+        console.log('Reading pixel data from analysis canvas...');
+
+        // Get image data from the fresh canvas
+        imageData = analysisCtx.getImageData(0, 0, analysisCanvas.width, analysisCanvas.height);
         pixels = imageData.data;
+
+        // Verify the pixels
+        console.log(`First pixel: RGB(${pixels[0]}, ${pixels[1]}, ${pixels[2]}, ${pixels[3]})`);
+        console.log(`Pixel at index 1000: RGB(${pixels[4000]}, ${pixels[4001]}, ${pixels[4002]}, ${pixels[4003]})`);
     } catch (error) {
         console.error('Error reading image data:', error);
         alert('Error analyzing image. The image may have security restrictions or be corrupted.');
