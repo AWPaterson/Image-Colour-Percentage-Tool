@@ -7,8 +7,8 @@ let allPixels = []; // Store all pixel colors for grouping
 const imageInput = document.getElementById('imageInput');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d', {
-    willReadFrequently: true,
-    colorSpace: 'srgb'  // Explicitly use sRGB color space
+    willReadFrequently: true
+    // Don't force color space - let browser handle it
 });
 const imagePreview = document.getElementById('imagePreview');
 const results = document.getElementById('results');
@@ -36,32 +36,69 @@ function handleImageUpload(event) {
         return;
     }
 
+    // Use createImageBitmap for better color profile handling
+    createImageBitmap(file, {
+        colorSpaceConversion: 'none',  // Preserve original colors
+        premultiplyAlpha: 'none'
+    }).then(bitmap => {
+        console.log(`Image loaded via createImageBitmap: ${bitmap.width}x${bitmap.height}`);
+
+        // Set canvas dimensions to match image
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+
+        // Clear the canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Draw bitmap on canvas
+        ctx.drawImage(bitmap, 0, 0);
+
+        // Show image preview
+        imagePreview.classList.remove('hidden');
+
+        // Sample a few pixels to check colors are being read correctly
+        console.log('Sampling some pixel colors from the drawn canvas:');
+        const testPixels = ctx.getImageData(
+            Math.floor(bitmap.width / 2),
+            Math.floor(bitmap.height / 2),
+            1,
+            1
+        ).data;
+        console.log(`Center pixel: RGB(${testPixels[0]}, ${testPixels[1]}, ${testPixels[2]}, alpha: ${testPixels[3]})`);
+
+        // Analyze colors
+        analyzeColors();
+    }).catch(error => {
+        console.error('Error loading image with createImageBitmap:', error);
+        // Fallback to traditional method
+        loadImageTraditional(file);
+    });
+}
+
+// Fallback to traditional image loading
+function loadImageTraditional(file) {
     const reader = new FileReader();
 
     reader.onload = function(e) {
         const img = new Image();
 
-        // Don't set crossOrigin for local files - this can cause issues
-        // img.crossOrigin = 'anonymous';
-
         img.onload = function() {
-            console.log(`Image loaded: ${img.width}x${img.height}`);
+            console.log(`Image loaded via traditional method: ${img.width}x${img.height}`);
 
             // Set canvas dimensions to match image
             canvas.width = img.width;
             canvas.height = img.height;
 
-            // Clear the canvas and reset any transforms
+            // Clear the canvas
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Draw image on canvas WITHOUT white background
-            // This was causing issues with color detection
+            // Draw image on canvas
             ctx.drawImage(img, 0, 0);
 
             // Show image preview
             imagePreview.classList.remove('hidden');
 
-            // Sample a few pixels to check colors are being read correctly
+            // Sample pixels
             console.log('Sampling some pixel colors from the drawn canvas:');
             const testPixels = ctx.getImageData(
                 Math.floor(img.width / 2),
