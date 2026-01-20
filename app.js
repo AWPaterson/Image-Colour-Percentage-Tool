@@ -376,7 +376,8 @@ function analyzeColors() {
         console.log(`  - Grayscale pixels (R=G=B): ${grayscaleCount} (${grayscalePercent.toFixed(1)}%)`);
         console.log(`  - Color pixels (R≠G≠B): ${colorCount} (${(100-grayscalePercent).toFixed(1)}%)`);
 
-        if (grayscalePercent > 95) {
+        // Lower threshold to 80% to catch more cases
+        if (grayscalePercent > 80) {
             console.error(`\n🔴 PROBLEM DETECTED:`);
             console.error(`The pixel data is ${grayscalePercent.toFixed(1)}% grayscale, even though the image displays in color!`);
             console.error(`\nThis means:`);
