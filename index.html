@@ -27,10 +27,17 @@
         <div id="results" class="results hidden">
             <h2>Color Analysis Results</h2>
             <div class="controls">
-                <label for="colorLimit">Number of colors to display:</label>
+                <label for="colorLimit">Number of colors:</label>
                 <input type="number" id="colorLimit" min="1" max="100" value="10">
+
+                <label class="checkbox-label">
+                    <input type="checkbox" id="groupColors">
+                    <span>Group similar colors</span>
+                </label>
+
                 <button id="updateResults">Update</button>
             </div>
+            <div class="info-text" id="groupingInfo"></div>
             <div id="colorList" class="color-list"></div>
             <div class="stats">
                 <p>Total pixels analyzed: <span id="totalPixels">0</span></p>

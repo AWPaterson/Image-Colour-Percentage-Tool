@@ -1,6 +1,7 @@
 // Global variables
 let imageData = null;
 let colorData = {};
+let allPixels = []; // Store all pixel colors for grouping
 
 // DOM elements
 const imageInput = document.getElementById('imageInput');
@@ -13,10 +14,13 @@ const totalPixelsEl = document.getElementById('totalPixels');
 const uniqueColorsEl = document.getElementById('uniqueColors');
 const colorLimitInput = document.getElementById('colorLimit');
 const updateButton = document.getElementById('updateResults');
+const groupColorsCheckbox = document.getElementById('groupColors');
+const groupingInfo = document.getElementById('groupingInfo');
 
 // Event listeners
 imageInput.addEventListener('change', handleImageUpload);
-updateButton.addEventListener('click', () => displayResults(colorData));
+updateButton.addEventListener('click', updateDisplay);
+groupColorsCheckbox.addEventListener('change', updateDisplay);
 
 // Handle image upload
 function handleImageUpload(event) {
@@ -63,7 +67,7 @@ function analyzeColors() {
 
     // Object to store color counts
     const colorCounts = {};
-    let totalPixelsAnalyzed = 0;
+    allPixels = []; // Reset all pixels array
 
     // Loop through all pixels
     for (let i = 0; i < pixels.length; i += 4) {
@@ -75,8 +79,8 @@ function analyzeColors() {
         // Skip fully transparent pixels
         if (a === 0) continue;
 
-        // Increment total pixels analyzed
-        totalPixelsAnalyzed++;
+        // Store pixel for grouping
+        allPixels.push([r, g, b]);
 
         // Create color key in RGB format
         const colorKey = `${r},${g},${b}`;
@@ -88,6 +92,8 @@ function analyzeColors() {
             colorCounts[colorKey] = 1;
         }
     }
+
+    const totalPixelsAnalyzed = allPixels.length;
 
     // Convert counts to percentages
     colorData = {};
@@ -101,14 +107,98 @@ function analyzeColors() {
     }
 
     // Display results
-    displayResults(colorData);
+    updateDisplay();
+}
+
+// Calculate Euclidean distance between two RGB colors
+function colorDistance(color1, color2) {
+    const [r1, g1, b1] = color1;
+    const [r2, g2, b2] = color2;
+    return Math.sqrt(
+        Math.pow(r2 - r1, 2) +
+        Math.pow(g2 - g1, 2) +
+        Math.pow(b2 - b1, 2)
+    );
+}
+
+// Find closest color from a palette
+function findClosestColor(pixel, palette) {
+    let minDistance = Infinity;
+    let closestColor = palette[0];
+
+    for (const color of palette) {
+        const distance = colorDistance(pixel, color);
+        if (distance < minDistance) {
+            minDistance = distance;
+            closestColor = color;
+        }
+    }
+
+    return closestColor;
+}
+
+// Group all pixels to nearest top N colors
+function groupColors(limit) {
+    // Get top N most common colors
+    const sortedColors = Object.entries(colorData).sort((a, b) =>
+        b[1].percentage - a[1].percentage
+    );
+
+    const topColors = sortedColors.slice(0, limit);
+    const palette = topColors.map(([color]) =>
+        color.split(',').map(Number)
+    );
+
+    // Count pixels assigned to each palette color
+    const groupedCounts = {};
+    palette.forEach(color => {
+        const key = color.join(',');
+        groupedCounts[key] = 0;
+    });
+
+    // Assign each pixel to nearest palette color
+    for (const pixel of allPixels) {
+        const closestColor = findClosestColor(pixel, palette);
+        const key = closestColor.join(',');
+        groupedCounts[key]++;
+    }
+
+    // Convert to percentage format
+    const totalPixels = allPixels.length;
+    const groupedData = {};
+
+    for (const [color, count] of Object.entries(groupedCounts)) {
+        const percentage = (count / totalPixels) * 100;
+        groupedData[color] = {
+            count: count,
+            percentage: percentage
+        };
+    }
+
+    return groupedData;
+}
+
+// Update display based on grouping setting
+function updateDisplay() {
+    const limit = parseInt(colorLimitInput.value) || 10;
+    const shouldGroup = groupColorsCheckbox.checked;
+
+    let dataToDisplay;
+
+    if (shouldGroup) {
+        dataToDisplay = groupColors(limit);
+        groupingInfo.textContent = `Grouping all pixels to the ${limit} most common colors. Similar tones are grouped together.`;
+        groupingInfo.classList.add('visible');
+    } else {
+        dataToDisplay = colorData;
+        groupingInfo.classList.remove('visible');
+    }
+
+    displayResults(dataToDisplay, limit);
 }
 
 // Display color analysis results
-function displayResults(data) {
-    // Get color limit from input
-    const limit = parseInt(colorLimitInput.value) || 10;
-
+function displayResults(data, limit) {
     // Sort colors by percentage (descending)
     const sortedColors = Object.entries(data).sort((a, b) =>
         b[1].percentage - a[1].percentage
@@ -117,8 +207,10 @@ function displayResults(data) {
     // Clear previous results
     colorList.innerHTML = '';
 
-    // Take top N colors
-    const topColors = sortedColors.slice(0, limit);
+    // Take top N colors (or all if grouping is enabled)
+    const topColors = groupColorsCheckbox.checked
+        ? sortedColors
+        : sortedColors.slice(0, limit);
 
     // Display each color
     topColors.forEach(([color, data]) => {
