@@ -39,50 +39,11 @@ function handleImageUpload(event) {
     // Check JPEG header for color space information
     checkJPEGColorSpace(file);
 
-    // Try different createImageBitmap options
-    // IMPORTANT: Try 'default' first to apply color profile transformations
-    // This fixes issues with grayscale JPEGs that have color profiles
-    const bitmapOptions = [
-        { colorSpaceConversion: 'default', premultiplyAlpha: 'none' },  // Try this FIRST
-        { premultiplyAlpha: 'none' },
-        {},  // No options at all
-        { colorSpaceConversion: 'none', premultiplyAlpha: 'none' }  // Last resort - preserves raw data
-    ];
-
-    console.log('Attempting to load image with createImageBitmap...');
-
-    // Try with 'default' first (apply color profile transformations)
-    createImageBitmap(file, bitmapOptions[0])
-        .then(bitmap => {
-            console.log(`Image loaded via createImageBitmap with colorSpaceConversion: 'default'`);
-            processImage(bitmap);
-        })
-        .catch(error => {
-            console.warn('Failed with colorSpaceConversion: default, trying without option...', error);
-            // Try without colorSpaceConversion option
-            return createImageBitmap(file, bitmapOptions[1]);
-        })
-        .then(bitmap => {
-            if (bitmap) {
-                console.log(`Image loaded via createImageBitmap with premultiplyAlpha only`);
-                processImage(bitmap);
-            }
-        })
-        .catch(error => {
-            console.warn('Failed with premultiplyAlpha only, trying no options...', error);
-            // Try with no options at all
-            return createImageBitmap(file, bitmapOptions[2]);
-        })
-        .then(bitmap => {
-            if (bitmap) {
-                console.log(`Image loaded via createImageBitmap with no options`);
-                processImage(bitmap);
-            }
-        })
-        .catch(error => {
-            console.error('All createImageBitmap attempts failed, falling back to traditional method', error);
-            loadImageTraditional(file);
-        });
+    // Use traditional image loading method - it reliably applies color profiles
+    // createImageBitmap has issues with colorSpaceConversion options, causing
+    // images with embedded color profiles to be read incorrectly
+    console.log('Loading image using traditional method to ensure color profiles are applied...');
+    loadImageTraditional(file);
 }
 
 // Check JPEG color space from file header
