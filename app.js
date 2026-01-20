@@ -63,7 +63,7 @@ function analyzeColors() {
 
     // Object to store color counts
     const colorCounts = {};
-    const totalPixels = canvas.width * canvas.height;
+    let totalPixelsAnalyzed = 0;
 
     // Loop through all pixels
     for (let i = 0; i < pixels.length; i += 4) {
@@ -74,6 +74,9 @@ function analyzeColors() {
 
         // Skip fully transparent pixels
         if (a === 0) continue;
+
+        // Increment total pixels analyzed
+        totalPixelsAnalyzed++;
 
         // Create color key in RGB format
         const colorKey = `${r},${g},${b}`;
@@ -90,7 +93,7 @@ function analyzeColors() {
     colorData = {};
 
     for (const [color, count] of Object.entries(colorCounts)) {
-        const percentage = (count / totalPixels) * 100;
+        const percentage = (count / totalPixelsAnalyzed) * 100;
         colorData[color] = {
             count: count,
             percentage: percentage
