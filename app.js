@@ -164,27 +164,97 @@ function loadImageTraditional(file) {
     reader.readAsDataURL(file);
 }
 
+// Try to read pixels using WebGL (may preserve color transformations)
+function tryWebGLPixelRead() {
+    try {
+        // Create an offscreen canvas for WebGL
+        const webglCanvas = document.createElement('canvas');
+        webglCanvas.width = canvas.width;
+        webglCanvas.height = canvas.height;
+
+        // Try to get WebGL context
+        const gl = webglCanvas.getContext('webgl2') || webglCanvas.getContext('webgl') || webglCanvas.getContext('experimental-webgl');
+
+        if (!gl) {
+            console.log('WebGL not supported');
+            return null;
+        }
+
+        console.log('WebGL context created successfully');
+
+        // Create a texture from the display canvas
+        const texture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+
+        // Upload the canvas image to the texture
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+
+        // Set texture parameters
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+        // Create a framebuffer
+        const framebuffer = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+
+        // Check if framebuffer is complete
+        if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+            console.error('Framebuffer not complete');
+            return null;
+        }
+
+        // Read pixels from the framebuffer
+        const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+        gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+        // Clean up
+        gl.deleteTexture(texture);
+        gl.deleteFramebuffer(framebuffer);
+
+        console.log('WebGL readPixels completed');
+        return pixels;
+
+    } catch (error) {
+        console.error('Error in WebGL pixel read:', error);
+        return null;
+    }
+}
+
 // Analyze colors in the image
 function analyzeColors() {
     let pixels;
 
     try {
-        // Create a fresh canvas for pixel analysis (separate from display)
-        const analysisCanvas = document.createElement('canvas');
-        analysisCanvas.width = canvas.width;
-        analysisCanvas.height = canvas.height;
-        const analysisCtx = analysisCanvas.getContext('2d', {
-            willReadFrequently: true
-        });
+        // Try WebGL approach first - it may give us rendered pixel data
+        console.log('Attempting to read pixels using WebGL...');
+        pixels = tryWebGLPixelRead();
 
-        // Copy the image from display canvas to analysis canvas
-        analysisCtx.drawImage(canvas, 0, 0);
+        if (pixels) {
+            console.log('✅ Successfully read pixels using WebGL!');
+            console.log(`First pixel via WebGL: RGB(${pixels[0]}, ${pixels[1]}, ${pixels[2]}, ${pixels[3]})`);
+        } else {
+            console.log('❌ WebGL not available, falling back to Canvas 2D...');
 
-        console.log('Reading pixel data from analysis canvas...');
+            // Fallback to Canvas 2D
+            const analysisCanvas = document.createElement('canvas');
+            analysisCanvas.width = canvas.width;
+            analysisCanvas.height = canvas.height;
+            const analysisCtx = analysisCanvas.getContext('2d', {
+                willReadFrequently: true
+            });
 
-        // Get image data from the fresh canvas
-        imageData = analysisCtx.getImageData(0, 0, analysisCanvas.width, analysisCanvas.height);
-        pixels = imageData.data;
+            // Copy the image from display canvas to analysis canvas
+            analysisCtx.drawImage(canvas, 0, 0);
+
+            console.log('Reading pixel data from Canvas 2D...');
+
+            // Get image data from the fresh canvas
+            imageData = analysisCtx.getImageData(0, 0, analysisCanvas.width, analysisCanvas.height);
+            pixels = imageData.data;
+        }
 
         // Verify the pixels and check if they're actually grayscale
         console.log(`First pixel: RGB(${pixels[0]}, ${pixels[1]}, ${pixels[2]}, ${pixels[3]})`);
