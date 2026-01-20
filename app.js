@@ -6,7 +6,10 @@ let allPixels = []; // Store all pixel colors for grouping
 // DOM elements
 const imageInput = document.getElementById('imageInput');
 const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d', { willReadFrequently: true });
+const ctx = canvas.getContext('2d', {
+    willReadFrequently: true,
+    colorSpace: 'srgb'  // Explicitly use sRGB color space
+});
 const imagePreview = document.getElementById('imagePreview');
 const results = document.getElementById('results');
 const colorList = document.getElementById('colorList');
@@ -38,23 +41,35 @@ function handleImageUpload(event) {
     reader.onload = function(e) {
         const img = new Image();
 
-        // Set crossOrigin to handle potential CORS issues
-        img.crossOrigin = 'anonymous';
+        // Don't set crossOrigin for local files - this can cause issues
+        // img.crossOrigin = 'anonymous';
 
         img.onload = function() {
+            console.log(`Image loaded: ${img.width}x${img.height}`);
+
             // Set canvas dimensions to match image
             canvas.width = img.width;
             canvas.height = img.height;
 
-            // Fill with white background first (helps with transparent PNGs)
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // Clear the canvas and reset any transforms
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Draw image on canvas
+            // Draw image on canvas WITHOUT white background
+            // This was causing issues with color detection
             ctx.drawImage(img, 0, 0);
 
             // Show image preview
             imagePreview.classList.remove('hidden');
+
+            // Sample a few pixels to check colors are being read correctly
+            console.log('Sampling some pixel colors from the drawn canvas:');
+            const testPixels = ctx.getImageData(
+                Math.floor(img.width / 2),
+                Math.floor(img.height / 2),
+                1,
+                1
+            ).data;
+            console.log(`Center pixel: RGB(${testPixels[0]}, ${testPixels[1]}, ${testPixels[2]}, alpha: ${testPixels[3]})`);
 
             // Analyze colors
             analyzeColors();
@@ -130,6 +145,23 @@ function analyzeColors() {
     });
     console.log(`Total unique colors: ${Object.keys(colorData).length}`);
     console.log(`Total pixels analyzed: ${totalPixelsAnalyzed}`);
+
+    // Debug: Check for blue-ish colors (where blue channel > red and green)
+    console.log('\nLooking for blue colors (B > R and B > G):');
+    const blueColors = sortedColors.filter(([color]) => {
+        const [r, g, b] = color.split(',').map(Number);
+        return b > r && b > g && b > 100; // Blue channel dominant and significant
+    });
+    console.log(`Found ${blueColors.length} blue-ish colors`);
+    if (blueColors.length > 0) {
+        console.log('Top 5 blue colors:');
+        blueColors.slice(0, 5).forEach(([color, data], index) => {
+            const [r, g, b] = color.split(',').map(Number);
+            console.log(`  ${index + 1}. RGB(${r}, ${g}, ${b}) - ${data.percentage.toFixed(2)}% (${data.count} pixels)`);
+        });
+    } else {
+        console.log('NO BLUE COLORS FOUND! This might indicate an image rendering issue.');
+    }
 
     // Display results
     updateDisplay();
