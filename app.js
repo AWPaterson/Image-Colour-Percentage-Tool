@@ -40,40 +40,42 @@ function handleImageUpload(event) {
     checkJPEGColorSpace(file);
 
     // Try different createImageBitmap options
+    // IMPORTANT: Try 'default' first to apply color profile transformations
+    // This fixes issues with grayscale JPEGs that have color profiles
     const bitmapOptions = [
-        { colorSpaceConversion: 'none', premultiplyAlpha: 'none' },
-        { colorSpaceConversion: 'default', premultiplyAlpha: 'none' },
+        { colorSpaceConversion: 'default', premultiplyAlpha: 'none' },  // Try this FIRST
         { premultiplyAlpha: 'none' },
-        {} // No options at all
+        {},  // No options at all
+        { colorSpaceConversion: 'none', premultiplyAlpha: 'none' }  // Last resort - preserves raw data
     ];
 
     console.log('Attempting to load image with createImageBitmap...');
 
-    // Try with 'none' first (preserve colors)
+    // Try with 'default' first (apply color profile transformations)
     createImageBitmap(file, bitmapOptions[0])
         .then(bitmap => {
-            console.log(`Image loaded via createImageBitmap with colorSpaceConversion: 'none'`);
+            console.log(`Image loaded via createImageBitmap with colorSpaceConversion: 'default'`);
             processImage(bitmap);
         })
         .catch(error => {
-            console.warn('Failed with colorSpaceConversion: none, trying default...', error);
-            // Try with default color space conversion
+            console.warn('Failed with colorSpaceConversion: default, trying without option...', error);
+            // Try without colorSpaceConversion option
             return createImageBitmap(file, bitmapOptions[1]);
         })
         .then(bitmap => {
             if (bitmap) {
-                console.log(`Image loaded via createImageBitmap with colorSpaceConversion: 'default'`);
+                console.log(`Image loaded via createImageBitmap with premultiplyAlpha only`);
                 processImage(bitmap);
             }
         })
         .catch(error => {
-            console.warn('Failed with default, trying without colorSpaceConversion option...', error);
-            // Try without colorSpaceConversion option
+            console.warn('Failed with premultiplyAlpha only, trying no options...', error);
+            // Try with no options at all
             return createImageBitmap(file, bitmapOptions[2]);
         })
         .then(bitmap => {
             if (bitmap) {
-                console.log(`Image loaded via createImageBitmap without colorSpaceConversion`);
+                console.log(`Image loaded via createImageBitmap with no options`);
                 processImage(bitmap);
             }
         })
