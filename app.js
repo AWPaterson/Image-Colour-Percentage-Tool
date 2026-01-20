@@ -222,9 +222,49 @@ function analyzeColors() {
         imageData = analysisCtx.getImageData(0, 0, analysisCanvas.width, analysisCanvas.height);
         pixels = imageData.data;
 
-        // Verify the pixels
+        // Verify the pixels and check if they're actually grayscale
         console.log(`First pixel: RGB(${pixels[0]}, ${pixels[1]}, ${pixels[2]}, ${pixels[3]})`);
         console.log(`Pixel at index 1000: RGB(${pixels[4000]}, ${pixels[4001]}, ${pixels[4002]}, ${pixels[4003]})`);
+
+        // Check if image is actually grayscale (all R=G=B) even though it displays in color
+        let grayscaleCount = 0;
+        let colorCount = 0;
+        const sampleSize = Math.min(10000, pixels.length / 4); // Sample 10000 pixels or less
+
+        for (let i = 0; i < sampleSize * 4; i += 4) {
+            const r = pixels[i];
+            const g = pixels[i + 1];
+            const b = pixels[i + 2];
+
+            if (r === g && g === b) {
+                grayscaleCount++;
+            } else {
+                colorCount++;
+            }
+        }
+
+        const grayscalePercent = (grayscaleCount / sampleSize) * 100;
+        console.log(`\n⚠️ PIXEL DATA ANALYSIS:`);
+        console.log(`Sampled ${sampleSize} pixels:`);
+        console.log(`  - Grayscale pixels (R=G=B): ${grayscaleCount} (${grayscalePercent.toFixed(1)}%)`);
+        console.log(`  - Color pixels (R≠G≠B): ${colorCount} (${(100-grayscalePercent).toFixed(1)}%)`);
+
+        if (grayscalePercent > 95) {
+            console.error(`\n🔴 PROBLEM DETECTED:`);
+            console.error(`The pixel data is ${grayscalePercent.toFixed(1)}% grayscale, even though the image displays in color!`);
+            console.error(`\nThis means:`);
+            console.error(`  • The raw JPEG data contains grayscale pixels (R=G=B)`);
+            console.error(`  • An embedded ICC color profile is mapping grayscale→color for display`);
+            console.error(`  • But getImageData() returns the RAW data (grayscale)`);
+            console.error(`\n💡 SOLUTION:`);
+            console.error(`You need to convert this image to RGB with the colors baked into the pixel data.`);
+            console.error(`Options:`);
+            console.error(`  1. Open in Photoshop/GIMP → Image → Mode → Convert to RGB Color → Save`);
+            console.error(`  2. Use online converter to convert from indexed/grayscale to RGB`);
+            console.error(`  3. Take a screenshot of the image and use the screenshot instead`);
+
+            alert('⚠️ Image Issue Detected!\n\nThis image has grayscale pixel data with a color profile applied. The app cannot detect colors from this format.\n\nSolution: Convert the image to RGB color mode using image editing software (Photoshop, GIMP, etc.) or take a screenshot of it.\n\nSee console for details.');
+        }
     } catch (error) {
         console.error('Error reading image data:', error);
         alert('Error analyzing image. The image may have security restrictions or be corrupted.');
