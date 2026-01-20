@@ -283,19 +283,15 @@ function analyzeColors() {
         console.log(`  - Grayscale pixels (R=G=B): ${grayscaleCount} (${grayscalePercent.toFixed(1)}%)`);
         console.log(`  - Color pixels (R≠G≠B): ${colorCount} (${(100-grayscalePercent).toFixed(1)}%)`);
 
-        // Lower threshold to 80% to catch more cases
+        // Warn if mostly grayscale but continue analysis
         if (grayscalePercent > 80) {
-            console.error(`\n🔴 ICC COLOR PROFILE ISSUE DETECTED:`);
-            console.error(`The pixel data is ${grayscalePercent.toFixed(1)}% grayscale, but the image displays in color.`);
-            console.error(`\nThis is a browser limitation:`);
-            console.error(`  • Your image contains grayscale pixels (R=G=B)`);
-            console.error(`  • An embedded ICC color profile maps those to colors for display`);
-            console.error(`  • But Canvas getImageData() cannot access the color-transformed data`);
-            console.error(`  • There's no way to extract the displayed colors using JavaScript`);
-
-            alert(`⚠️ ICC Color Profile Detected\n\nYour image displays in color but contains grayscale pixel data with an embedded color profile.\n\nBrowsers cannot extract the color-transformed pixel data through JavaScript.\n\n📋 HOW TO FIX:\n\n1. Open your image in image editing software (Photoshop, GIMP, etc.)\n\n2. "Flatten" or "Apply" the color profile:\n   • Photoshop: Edit → Convert to Profile → sRGB\n   • GIMP: Image → Flatten Image, then Image → Mode → RGB\n\n3. Save as a new JPEG or PNG\n\n4. Upload the new file to this tool\n\nThis will bake the colors into the actual pixel data.`);
-
-            return; // Stop current analysis
+            console.warn(`\n⚠️ HIGH GRAYSCALE PERCENTAGE:`);
+            console.warn(`The pixel data is ${grayscalePercent.toFixed(1)}% grayscale.`);
+            console.warn(`This may indicate:`);
+            console.warn(`  • An image with naturally high grayscale content (B&W photo, etc.)`);
+            console.warn(`  • Or an ICC color profile issue if the image displays in color`);
+            console.warn(`\nContinuing with analysis anyway...`);
+            // Don't stop - continue with analysis to show what we find
         }
     } catch (error) {
         console.error('Error reading image data:', error);
