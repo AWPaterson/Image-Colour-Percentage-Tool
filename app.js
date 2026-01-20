@@ -8,7 +8,7 @@ const imageInput = document.getElementById('imageInput');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d', {
     willReadFrequently: true
-    // Don't force color space - let browser handle it
+    // Note: Cannot access ICC color profile transformed data via getImageData()
 });
 const imagePreview = document.getElementById('imagePreview');
 const results = document.getElementById('results');
@@ -141,7 +141,8 @@ function processImage(source) {
         console.log(`${label} [${x},${y}]: RGB(${testPixels[0]}, ${testPixels[1]}, ${testPixels[2]}, alpha: ${testPixels[3]})`);
     });
 
-    // Analyze colors
+    // Analyze colors directly
+    // Note: getImageData() returns raw pixel data without ICC color profile transformations
     analyzeColors();
 }
 
@@ -161,133 +162,6 @@ function loadImageTraditional(file) {
     };
 
     reader.readAsDataURL(file);
-}
-
-// Try to fix color profile issues by converting to PNG
-function tryConvertToPNG() {
-    console.log('\n🔧 Attempting to fix by re-encoding as PNG...');
-
-    try {
-        // Convert the current canvas (which displays correctly) to PNG
-        const pngDataURL = canvas.toDataURL('image/png');
-        console.log('Canvas converted to PNG data URL');
-
-        // Create a new image from the PNG
-        const img = new Image();
-
-        img.onload = function() {
-            console.log('PNG image loaded, redrawing to canvas...');
-
-            // Clear and redraw
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(img, 0, 0);
-
-            console.log('Re-analyzing colors from PNG...');
-
-            // Re-analyze without going through the conversion again
-            analyzeColorsDirectly();
-        };
-
-        img.onerror = function(error) {
-            console.error('Failed to load PNG conversion:', error);
-            alert('Auto-fix failed. The image format cannot be automatically converted.\n\nPlease manually convert the image to RGB color space using image editing software.');
-        };
-
-        img.src = pngDataURL;
-    } catch (error) {
-        console.error('Error during PNG conversion:', error);
-        alert('Auto-fix failed: ' + error.message + '\n\nPlease manually convert the image to RGB color space.');
-    }
-}
-
-// Analyze colors without checking for grayscale (used after PNG conversion)
-function analyzeColorsDirectly() {
-    let pixels;
-
-    try {
-        // Get image data from canvas
-        imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        pixels = imageData.data;
-
-        console.log('Reading pixel data after PNG conversion...');
-        console.log(`First pixel: RGB(${pixels[0]}, ${pixels[1]}, ${pixels[2]}, ${pixels[3]})`);
-    } catch (error) {
-        console.error('Error reading image data:', error);
-        alert('Error analyzing converted image.');
-        return;
-    }
-
-    // Object to store color counts
-    const colorCounts = {};
-    allPixels = []; // Reset all pixels array
-
-    // Loop through all pixels
-    for (let i = 0; i < pixels.length; i += 4) {
-        const r = pixels[i];
-        const g = pixels[i + 1];
-        const b = pixels[i + 2];
-        const a = pixels[i + 3];
-
-        // Skip fully transparent pixels
-        if (a === 0) continue;
-
-        // Store pixel for grouping
-        allPixels.push([r, g, b]);
-
-        // Create color key in RGB format
-        const colorKey = `${r},${g},${b}`;
-
-        // Count color occurrences
-        if (colorCounts[colorKey]) {
-            colorCounts[colorKey]++;
-        } else {
-            colorCounts[colorKey] = 1;
-        }
-    }
-
-    const totalPixelsAnalyzed = allPixels.length;
-
-    // Check if still grayscale
-    let grayscaleCount = 0;
-    let colorCount = 0;
-    for (const pixel of allPixels.slice(0, 1000)) {
-        if (pixel[0] === pixel[1] && pixel[1] === pixel[2]) {
-            grayscaleCount++;
-        } else {
-            colorCount++;
-        }
-    }
-
-    if (grayscaleCount > 950) {
-        console.error('❌ PNG conversion still resulted in grayscale data.');
-        console.error('This image cannot be automatically fixed.');
-        alert('❌ Auto-fix Failed\n\nThe image still contains grayscale data after conversion.\n\nYou must manually convert this image:\n1. Open in image editing software\n2. Apply/flatten the color profile\n3. Save as new RGB JPEG or PNG\n4. Upload the new file');
-        return;
-    }
-
-    console.log('✅ PNG conversion successful! Colors detected after conversion.');
-
-    // Convert counts to percentages
-    colorData = {};
-
-    for (const [color, count] of Object.entries(colorCounts)) {
-        const percentage = (count / totalPixelsAnalyzed) * 100;
-        colorData[color] = {
-            count: count,
-            percentage: percentage
-        };
-    }
-
-    // Debug: Log top 10 colors
-    const sortedColors = Object.entries(colorData).sort((a, b) => b[1].percentage - a[1].percentage);
-    console.log('Top 10 colors detected after conversion:');
-    sortedColors.slice(0, 10).forEach(([color, data], index) => {
-        const [r, g, b] = color.split(',').map(Number);
-        console.log(`${index + 1}. RGB(${r}, ${g}, ${b}) - ${data.percentage.toFixed(2)}% (${data.count} pixels)`);
-    });
-
-    // Display results
-    updateDisplay();
 }
 
 // Analyze colors in the image
@@ -341,17 +215,16 @@ function analyzeColors() {
 
         // Lower threshold to 80% to catch more cases
         if (grayscalePercent > 80) {
-            console.error(`\n🔴 PROBLEM DETECTED:`);
-            console.error(`The pixel data is ${grayscalePercent.toFixed(1)}% grayscale, even though the image displays in color!`);
-            console.error(`\nThis means:`);
-            console.error(`  • The raw JPEG data contains grayscale pixels (R=G=B)`);
-            console.error(`  • An embedded ICC color profile is mapping grayscale→color for display`);
-            console.error(`  • But getImageData() returns the RAW data (grayscale)`);
-            console.error(`\n💡 ATTEMPTING AUTO-FIX:`);
-            console.error(`Trying to convert the rendered canvas to PNG and re-analyze...`);
+            console.error(`\n🔴 ICC COLOR PROFILE ISSUE DETECTED:`);
+            console.error(`The pixel data is ${grayscalePercent.toFixed(1)}% grayscale, but the image displays in color.`);
+            console.error(`\nThis is a browser limitation:`);
+            console.error(`  • Your image contains grayscale pixels (R=G=B)`);
+            console.error(`  • An embedded ICC color profile maps those to colors for display`);
+            console.error(`  • But Canvas getImageData() cannot access the color-transformed data`);
+            console.error(`  • There's no way to extract the displayed colors using JavaScript`);
 
-            // Attempt to fix by converting canvas to PNG and re-loading
-            tryConvertToPNG();
+            alert(`⚠️ ICC Color Profile Detected\n\nYour image displays in color but contains grayscale pixel data with an embedded color profile.\n\nBrowsers cannot extract the color-transformed pixel data through JavaScript.\n\n📋 HOW TO FIX:\n\n1. Open your image in image editing software (Photoshop, GIMP, etc.)\n\n2. "Flatten" or "Apply" the color profile:\n   • Photoshop: Edit → Convert to Profile → sRGB\n   • GIMP: Image → Flatten Image, then Image → Mode → RGB\n\n3. Save as a new JPEG or PNG\n\n4. Upload the new file to this tool\n\nThis will bake the colors into the actual pixel data.`);
+
             return; // Stop current analysis
         }
     } catch (error) {
