@@ -266,9 +266,13 @@ async function loadImageWithImageDecoder(file) {
     try {
         console.log('Creating ImageDecoder...');
 
-        // Create ImageDecoder from the file
+        // Convert File to ArrayBuffer (ImageDecoder requires this)
+        const arrayBuffer = await file.arrayBuffer();
+        console.log(`File converted to ArrayBuffer: ${arrayBuffer.byteLength} bytes`);
+
+        // Create ImageDecoder from the ArrayBuffer
         const decoder = new ImageDecoder({
-            data: file,
+            data: arrayBuffer,
             type: file.type,
             colorSpaceConversion: 'default',  // Apply color profile transformations
             desiredWidth: undefined,
